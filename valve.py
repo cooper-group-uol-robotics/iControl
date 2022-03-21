@@ -6,10 +6,6 @@ class drainValve:
     # check that all this actually works with the Arduino...
     '''
     For controlling the OptiMax bottom drain valve via Arduino 
-    
-    Commands to write to the Arduino to open or close the valve:
-    4 = open command
-    5 = close command
 
     Valve states to read from the Arduino:
     1 = open (static)
