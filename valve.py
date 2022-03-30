@@ -2,107 +2,151 @@ import serial
 import time
 
 class drainValve:
-
-    # check that all this actually works with the Arduino...
     '''
     For controlling the OptiMax bottom drain valve via Arduino 
 
-    Valve states to read from the Arduino:
-    1 = open (static)
-    0 = closed (static)
+    Commands to send to the Arduino:
+    <o> = open valve
+    <c> = cose valve
 
-    The valve state is always CLOSED (1) when an instance of the class is created
+    Valve states that the Arduino can report:
+    <O> = valve is open
+    <C> = valve is closed 
+    (note uppercase here versus lowercase for movement commands)
+
+    The valve state is always CLOSED when an instance of the class is created
     '''
 
     def __init__(self, com_port):
-        self.valve_state = 0
-        self.arduino = serial.Serial(port=com_port, baudrate=115200, timeout = None)
+        self.valve_state = "<C>" # closed
+        self.arduino = serial.Serial(port=com_port, baudrate=9600, timeout = None)
         time.sleep(3)
 
+    def query_arduino(self, instructions): # instructions should be string; <s> or <o> or <c>
+
+        # some of the below needs to be elsewhere or?
+        command_len = 5 # can send (COMMAND_LEN-1) characters (including < and >) -> max command length
+        data = '' # for incoming serial data
+        incoming = ''
+        command = [""]*command_len # string for the command
+        last_command = ''
+        tick = 0
+        complete = 0 # is 1 if the command is complete (a '>' character has been received), otherwise is 0
+        commandPassed = False
+
+        while True: # function repeats over and over until 'return' is hit when "<d>" received from Arduino
+
+            if (self.arduino.in_waiting == 0 and (last_command == '' or last_command == "<e>" or last_command == "<i>") and commandPassed == False):
+                
+                print(f'Command being sent to Arduino is: {instructions}')
+                commandPassed = True
+
+                if len(instructions) > command_len-1:
+                    print('Command too long!')
+                else:
+                    self.arduino.write(str.encode(instructions))
+                    print('Command sent')
+
+            while (self.arduino.in_waiting == 0):
+                print("Waiting for data from arduino...")
+                time.sleep(1)
+
+            print(f'Arduino in waiting value is: {self.arduino.in_waiting}')
+
+            while (self.arduino.in_waiting > 0):
+                # read the incoming byte:
+                data = self.arduino.read()
+                # get just the character out:
+                incoming = chr(data[-1])
+                
+                if (incoming != '\n' and incoming !='\r'): # new line character will be ignored
+                    
+                    # command is complete and incoming is not a start character... don't do anything
+                    if (complete == 1 and incoming != '<'):
+                        pass 
+                    # start character given; start building the command
+                    elif (incoming == '<'):
+                        command = [""]*command_len
+                        tick = 0
+                        complete = 0
+                        command[tick] = incoming
+                        tick += 1
+                    # end character given, command is complete
+                    elif (incoming == '>' and tick < (command_len-1) and command[0] == '<') :
+                        command[tick] = incoming
+                        complete = 1
+                    # building the command
+                    elif (incoming != '<' and incoming != '>' and tick < (command_len-1) and command[0] == '<'):
+                        command[tick] = incoming
+                        tick += 1
+                    # no start character has been seen... don't add anything to the command
+                    elif (incoming != '<' and incoming != '>' and tick < (command_len-1) and command[0] != '<'):
+                        pass 
+                    # too many characters given; empty the command
+                    elif (tick >= (command_len-1)):
+                        command = [""]*command_len
+                        tick = 0
+                        complete = 0
+
+                    if complete == 1:
+                        if (command[0] == '<' and command[1] == 'b' and command[2] == '>'):
+                            print('Arduino busy')
+                            last_command = "<b>"
+                        elif (command[0] == '<' and command[1] == 'd' and command[2] == '>'):
+                            print('Arduino done with task')
+                            last_command = "<d>"
+                            return # ends the function if a task has been completed by the arduino (i.e. the pumping is done)
+                        elif (command[0] == '<' and command[1] == 'c' and command[2] == '>'):
+                            print('Arduino has received a complete command that is ready to action')
+                            last_command = "<c>"
+                        elif (command[0] == '<' and command[1] == 'i' and command[2] == '>'):
+                            print('Arduino currently has an incomplete command...')
+                            last_command = "<i>"
+                        elif (command[0] == '<' and command[1] == 'e' and command[2] == '>'):
+                            print('Command is empty on the Arduino')
+                            last_command = "<e>"
+                        elif (command[0] == '<' and command[1] == 'w' and command[2] == '>'):
+                            print('Warning - command is complete but does not make sense or trying to open valve when closed etc..  Command will be removed.')
+                            last_command = "<w>"
+                        elif (command[0] == '<' and command[1] == 'C' and command[2] == '>'):
+                            print("Valve is currently closed")
+                            self.valve_state = "<C>"
+                        elif (command[0] == '<' and command[1] == 'O' and command[2] == '>'):
+                            print("Valve is currently open")
+                            self.valve_state = "<O>"
+                        else:
+                            print(f'Current command is {command}, complete but not known.')
+                    #else:
+                    #    print('Arduino is sending data...')
+
+
     def get_state(self):
-        time.sleep(2)
-        #self.arduino.reset_output_buffer()
-        self.arduino.write(str.encode('2'))   # this doesn't seem to be updating and reading new data properly...
-        time.sleep(2)
-        incoming_data = str(self.arduino.read(3))
-        print(incoming_data)
-        if '1' in incoming_data:
-            self.valve_state = 1    # 1 = open
-            print(f'valve state is {self.valve_state}, open')
-            return 1
-        if '0' in incoming_data:
-            self.valve_state = 0    # 0 = closed
-            print(f'valve state is {self.valve_state}, closed')
-            return 0
-        if '4' in incoming_data:
-            print('Arduino giving an open error')
-            exit()
-        if '5' in incoming_data:
-            print('Arduino giving a close error')
-            exit()
-        if '6' in incoming_data:
-            print('it is going into the if statement...')
-            exit()
-        else:
-            print('incoming data from Arduino does not make sense')
+        self.query_arduino("<s>")
+        print(f"Current valve state is: {self.valve_state}")
+        return self.valve_state
 
 
     def open(self):
-
-        if self.valve_state == 0:
-            print('valve is currently closed, okay to open')
-            #self.arduino.reset_output_buffer()
-            self.arduino.write(str.encode('1'))
-            time.sleep(3)
-            while self.valve_state == 0:
-                incoming_data = str(self.arduino.read(3)) #getting 1 here!!!
-                if ('1' in incoming_data):
-                    self.valve_state = 1
-                print(f'incoming data: {incoming_data}') 
-  
-            if self.valve_state == 1:
-                print('valve should be open now')
-            else:
-                print(f'error - arduino does not say valve is in open state - giving state as {self.valve_state}')
-        elif self.valve_state == 1:
-            print('valve is already open, cannot send open command!')
+        self.get_state()
+        if self.valve_state == "<C>":
+            print("Valve is currently closed, okay to open")
+            self.query_arduino("<o>")
+            self.get_state()
+            if self.valve_state == "<O>":
+                print("Valve should be open now.")
         else:
-            print(f'do not recognise current valve state: {self.valve_state}')
+            print("Valve state is not closed - hence cannot open it.")
 
 
     def close(self):
-
-        if self.valve_state == 1:
-            print('valve is currently open, okay to close')
-            self.arduino.write(str.encode('0'))
-            time.sleep(3)
-            while self.valve_state == 1:
-                incoming_data = str(self.arduino.read(3)) 
-                if ('0' in incoming_data):
-                    self.valve_state = 0
-                print(f'incoming data: {incoming_data}') 
-
-            if self.valve_state == 0:
-                print('valve should be closed now')
-            else:
-                print('error - arduino does not say valve is in closed state')
-        elif self.valve_state == 0:
-            print('valve is already closed, cannot send close command!')
+        self.get_state()
+        if self.valve_state == "<O>":
+            print("Valve is currently open, okay to close")
+            self.query_arduino("<c>")
+            self.get_state()
+            if self.valve_state == "<C>":
+                print("Valve should be closed now.")
         else:
-            print(f'do not recognise current valve state: {self.valve_state}')
+            print("Valve state is not open - hence cannot close it.")
 
-
-    # def check_done(self):
-
-    #     self.get_state()
-
-    #     while self.valve_state == 2 or self.valve_state == 3:
-    #         self.valve_state = self.arduino.read()
-
-    #     if self.valve_state == 0:
-    #         print('Valve is now open and static')
-    #     if self.valve_state == 1:
-    #         print('Valve is now closed and static')
-
-    #     return True
 
