@@ -5,6 +5,7 @@ import pywinauto
 from pywinauto.application import Application
 from pywinauto.application import WindowSpecification
 import valve
+import pump
 import logging
 import subprocess
 
@@ -32,12 +33,23 @@ class iControl:
       self.experiment_ready = False
       self.experiment_running = False
       self.valve = None
+      self.pump = None
 
   def set_iControl_path(self, path):
     self.iControl_path = path
 
   def initialise_valve(self, com_port):
     self.valve = valve.drainValve(com_port)
+
+  def initialise_pump(self, com_port):
+    self.pump = pump.PeriPump(com_port)
+    x = input("Prime pump line?")
+    if x == "y":
+      self.pump.prime()
+    x = input("Calibrate?")
+    if x == 'y':
+      print("Calibrating with 10000 motor steps")
+      self.pump.calibrate('10000')
 
   def find_path(self):
     '''
@@ -215,6 +227,11 @@ class iControl:
             self.valve.open()
           elif 'close valve' in message_string:
             self.valve.close()
+          elif 'dispense' in message_string:
+            index_1 = message_string.index("dispense") + 9
+            index_2 = message_string.index("ml") - 1
+            vol = str(message_string[index_1:index_2])
+            self.pump.runPump('c',volume = vol)
           else:
             print('Not a valid message in the Operator Message text box')
 

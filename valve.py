@@ -19,7 +19,7 @@ class drainValve:
 
     def __init__(self, com_port):
         self.valve_state = "<C>" # closed
-        self.arduino = serial.Serial(port=com_port, baudrate=9600, timeout = None)
+        self.valve_arduino = serial.Serial(port=com_port, baudrate=9600, timeout = None)
         time.sleep(3)
 
     def query_arduino(self, instructions): # instructions should be string; <s> or <o> or <c>
@@ -36,7 +36,7 @@ class drainValve:
 
         while True: # function repeats over and over until 'return' is hit when "<d>" received from Arduino
 
-            if (self.arduino.in_waiting == 0 and (last_command == '' or last_command == "<e>" or last_command == "<i>") and commandPassed == False):
+            if (self.valve_arduino.in_waiting == 0 and (last_command == '' or last_command == "<e>" or last_command == "<i>") and commandPassed == False):
                 
                 print(f'Command being sent to Arduino is: {instructions}')
                 commandPassed = True
@@ -44,18 +44,18 @@ class drainValve:
                 if len(instructions) > command_len-1:
                     print('Command too long!')
                 else:
-                    self.arduino.write(str.encode(instructions))
+                    self.valve_arduino.write(str.encode(instructions))
                     print('Command sent')
 
-            while (self.arduino.in_waiting == 0):
+            while (self.valve_arduino.in_waiting == 0):
                 print("Waiting for data from arduino...")
                 time.sleep(1)
 
-            print(f'Arduino in waiting value is: {self.arduino.in_waiting}')
+            print(f'Arduino in waiting value is: {self.valve_arduino.in_waiting}')
 
-            while (self.arduino.in_waiting > 0):
+            while (self.valve_arduino.in_waiting > 0):
                 # read the incoming byte:
-                data = self.arduino.read()
+                data = self.valve_arduino.read()
                 # get just the character out:
                 incoming = chr(data[-1])
                 
